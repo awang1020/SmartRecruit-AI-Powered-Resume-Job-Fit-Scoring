@@ -75,10 +75,6 @@ npm start
 ![Fit analysis dashboard](docs/screenshots/fit-dashboard.png)  
 *Interactive dashboard displaying fit score, strengths, and weaknesses.*
 
-![JSON matrix output](docs/screenshots/json-output.png)  
-*Downloadable JSON payload for further analysis or ATS integration.*
-
-**Quick Demo (GIF):** `docs/screenshots/quick-demo.gif` – Drag a short GIF here to show the end-to-end flow.
 
 ## 🧪 How It Works (Step-by-Step)
 1. **Resume & Job Intake** – Users paste or upload text into the Next.js interface with instant validation feedback.
@@ -88,44 +84,6 @@ npm start
 5. **Visualization** – The frontend renders fit score cards, strengths/weakness lists, and interview question buckets.
 6. **Actionable Output** – Users can copy recommendations, export JSON, or persist the data (ready for ATS or dashboards).
 
-## 📊 Example Use Case
-**Input**
-```text
-Job Description Excerpt:
-- Senior Frontend Engineer with expertise in React, TypeScript, and accessibility.
-- Experience with design systems, automated testing, and mentoring engineers.
-
-Resume Excerpt:
-- Led React 18 migration, delivered component library with Storybook and testing via Jest + Testing Library.
-- Mentored 4 engineers, improved Lighthouse accessibility scores by 20%.
-```
-
-**AI Output (truncated)**
-```json
-{
-  "fit_score": 87,
-  "fit_summary": "The candidate demonstrates strong React leadership and testing practices with minor gaps in accessibility certifications.",
-  "strengths": [
-    "Delivered and maintained a reusable React component library with TypeScript typings.",
-    "Mentored engineers and drove team adoption of automated testing frameworks.",
-    "Documented accessibility improvements with measurable Lighthouse gains."
-  ],
-  "weaknesses": [
-    "No direct mention of WCAG certification or accessibility audits.",
-    "Limited evidence of collaborating with product designers on design system governance.",
-    "Does not list hands-on experience with end-to-end testing suites."
-  ],
-  "recommendations": [
-    "Add examples of partnering with design to maintain the component library roadmap.",
-    "Highlight any accessibility compliance efforts or certifications.",
-    "Mention experience with Playwright or Cypress to strengthen testing coverage narrative."
-  ],
-  "recruiter_questions": ["How does the candidate measure component adoption across teams?"],
-  "candidate_questions": ["What accessibility tooling does the engineering org provide by default?"]
-}
-```
-
-Use this sample to calibrate expectations when demoing to recruiters or tailoring resume updates.
 
 ## 📚 Additional Resources
 - `docs/architecture.md` – Extended system architecture, deployment considerations, and roadmap ideas.
