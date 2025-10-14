@@ -1,241 +1,342 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 
 const SUPPORTED_EXTENSIONS = new Set(['txt', 'md', 'rtf', 'pdf', 'docx']);
 
-const sanitizeExtractedText = (value: string) =>
+const STOP_WORDS = new Set([
+  'a',
+  'about',
+  'above',
+  'after',
+  'again',
+  'against',
+  'all',
+  'am',
+  'an',
+  'and',
+  'any',
+  'are',
+  "aren't",
+  'as',
+  'at',
+  'be',
+  'because',
+  'been',
+  'before',
+  'being',
+  'below',
+  'between',
+  'both',
+  'but',
+  'by',
+  "can't",
+  'cannot',
+  'could',
+  "couldn't",
+  'did',
+  "didn't",
+  'do',
+  'does',
+  "doesn't",
+  'doing',
+  "don't",
+  'down',
+  'during',
+  'each',
+  'few',
+  'for',
+  'from',
+  'further',
+  'had',
+  "hadn't",
+  'has',
+  "hasn't",
+  'have',
+  "haven't",
+  'having',
+  'he',
+  "he'd",
+  "he'll",
+  "he's",
+  'her',
+  'here',
+  "here's",
+  'hers',
+  'herself',
+  'him',
+  'himself',
+  'his',
+  'how',
+  "how's",
+  'i',
+  "i'd",
+  "i'll",
+  "i'm",
+  "i've",
+  'if',
+  'in',
+  'into',
+  'is',
+  "isn't",
+  'it',
+  "it's",
+  'its',
+  'itself',
+  "let's",
+  'me',
+  'more',
+  'most',
+  "mustn't",
+  'my',
+  'myself',
+  'no',
+  'nor',
+  'not',
+  'of',
+  'off',
+  'on',
+  'once',
+  'only',
+  'or',
+  'other',
+  'ought',
+  'our',
+  'ours',
+  'ourselves',
+  'out',
+  'over',
+  'own',
+  'same',
+  "shan't",
+  'she',
+  "she'd",
+  "she'll",
+  "she's",
+  'should',
+  "shouldn't",
+  'so',
+  'some',
+  'such',
+  'than',
+  'that',
+  "that's",
+  'the',
+  'their',
+  'theirs',
+  'them',
+  'themselves',
+  'then',
+  'there',
+  "there's",
+  'these',
+  'they',
+  "they'd",
+  "they'll",
+  "they're",
+  "they've",
+  'this',
+  'those',
+  'through',
+  'to',
+  'too',
+  'under',
+  'until',
+  'up',
+  'very',
+  'was',
+  "wasn't",
+  'we',
+  "we'd",
+  "we'll",
+  "we're",
+  "we've",
+  'were',
+  "weren't",
+  'what',
+  "what's",
+  'when',
+  "when's",
+  'where',
+  "where's",
+  'which',
+  'while',
+  'who',
+  "who's",
+  'whom',
+  'why',
+  "why's",
+  'with',
+  "won't",
+  'would',
+  "wouldn't",
+  'you',
+  "you'd",
+  "you'll",
+  "you're",
+  "you've",
+  'your',
+  'yours',
+  'yourself',
+  'yourselves',
+]);
+
+const KEYWORD_DEFAULT_COUNT = 15;
+
+declare global {
+  interface Window {
+    pdfjsLib?: {
+      getDocument: (options: unknown) => { promise: Promise<any> };
+      GlobalWorkerOptions: { workerSrc: string };
+    };
+    __pdfjsLoadingPromise?: Promise<any>;
+    mammoth?: {
+      extractRawText: (options: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }>;
+    };
+    __mammothLoadingPromise?: Promise<any>;
+  }
+}
+
+const CDN_BASE_PDF = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174';
+const MAMMOTH_BROWSER_SRC = 'https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js';
+
+const loadScript = (src: string) =>
+  new Promise<void>((resolve, reject) => {
+    if (typeof window === 'undefined') {
+      reject(new Error('Scripts can only be loaded in the browser.'));
+      return;
+    }
+
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
+    if (existing) {
+      if (existing.dataset.status === 'loaded') {
+        resolve();
+        return;
+      }
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error(`Failed to load script ${src}`)), {
+        once: true,
+      });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.dataset.status = 'loading';
+    script.onload = () => {
+      script.dataset.status = 'loaded';
+      resolve();
+    };
+    script.onerror = () => {
+      script.dataset.status = 'error';
+      reject(new Error(`Failed to load script ${src}`));
+    };
+    document.head.appendChild(script);
+  });
+
+const loadPdfJs = async () => {
+  if (typeof window === 'undefined') {
+    throw new Error('PDF parsing is only supported in the browser.');
+  }
+
+  if (window.pdfjsLib) {
+    return window.pdfjsLib;
+  }
+
+  if (!window.__pdfjsLoadingPromise) {
+    window.__pdfjsLoadingPromise = (async () => {
+      await loadScript(`${CDN_BASE_PDF}/pdf.min.js`);
+      if (!window.pdfjsLib) {
+        throw new Error('Failed to initialize the PDF.js library.');
+      }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${CDN_BASE_PDF}/pdf.worker.min.js`;
+      return window.pdfjsLib;
+    })();
+  }
+
+  return window.__pdfjsLoadingPromise;
+};
+
+const loadMammoth = async () => {
+  if (typeof window === 'undefined') {
+    throw new Error('DOCX parsing is only supported in the browser.');
+  }
+
+  if (window.mammoth) {
+    return window.mammoth;
+  }
+
+  if (!window.__mammothLoadingPromise) {
+    window.__mammothLoadingPromise = (async () => {
+      await loadScript(MAMMOTH_BROWSER_SRC);
+      if (!window.mammoth) {
+        throw new Error('Failed to initialize the Mammoth library.');
+      }
+      return window.mammoth;
+    })();
+  }
+
+  return window.__mammothLoadingPromise;
+};
+
+const stripRtf = (value: string) =>
   value
-    .replace(/\r\n/g, '\n')
-    .replace(/\u0000/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\{\\(?:\*?[^}]|[^{}])*}/g, ' ')
+    .replace(/\n/g, ' ')
+    .replace(/\\'[0-9a-fA-F]{2}/g, (match) =>
+      String.fromCharCode(parseInt(match.slice(2), 16))
+    )
+    .replace(/\\[a-zA-Z]+-?\d* ?/g, ' ')
+    .replace(/[{}]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 
-const decodePdfToken = (token: string) =>
-  token
-    .replace(/\\\(/g, '(')
-    .replace(/\\\)/g, ')')
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\f/g, '\f')
-    .replace(/\\\\/g, '\\');
+const cleanExtractedText = (value: string) => {
+  const normalized = value
+    .replace(/\r\n/g, '\n')
+    .replace(/\f/g, '\n')
+    .replace(/\u0000/g, '')
+    .replace(/^[\t ]*\d+[\t ]*$/gm, '')
+    .replace(/^page\s+\d+(\s+of\s+\d+)?$/gim, '')
+    .replace(/^(title|author|subject|keywords|creator|producer|creationdate|moddate):.*$/gim, '')
+    .replace(/[ \t]+\n/g, '\n');
 
-const extractTextFromPdf = (buffer: ArrayBuffer) => {
-  const raw = new TextDecoder('latin1').decode(buffer);
-  const segments: string[] = [];
+  const lines = normalized
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(/[^\S\n]+/g, ' ')
+        .replace(/\s?[-–—]\s?/g, (match) => (match.trim() === '-' ? ' - ' : ' '))
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter((line, index, array) => line.length > 0 || (index > 0 && array[index - 1].length > 0));
 
-  const simpleRegex = /\((?:\\.|[^\\)])*\)\s*Tj/g;
-  let simpleMatch: RegExpExecArray | null;
-  while ((simpleMatch = simpleRegex.exec(raw)) !== null) {
-    const content = simpleMatch[0].replace(/Tj$/, '').trim();
-    segments.push(decodePdfToken(content.slice(1, -1)));
-  }
-
-  const arrayRegex = /\[(.*?)\]\s*TJ/g;
-  let arrayMatch: RegExpExecArray | null;
-  while ((arrayMatch = arrayRegex.exec(raw)) !== null) {
-    const inner = arrayMatch[1];
-    const innerSegments: string[] = [];
-    const tokenRegex = /\((?:\\.|[^\\)])*\)/g;
-    let tokenMatch: RegExpExecArray | null;
-    while ((tokenMatch = tokenRegex.exec(inner)) !== null) {
-      innerSegments.push(decodePdfToken(tokenMatch[0].slice(1, -1)));
-    }
-    if (innerSegments.length) {
-      segments.push(innerSegments.join(''));
-    }
-  }
-
-  if (segments.length === 0) {
-    return raw.replace(/\r\n/g, '\n');
-  }
-
-  return segments.join('\n');
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 };
 
-const collectStreamChunks = async (stream: ReadableStream<Uint8Array>) => {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
-      }
-      if (value) {
-        chunks.push(value);
-        total += value.length;
-      }
+const keywordFrequencyMap = (value: string) => {
+  const counts = new Map<string, number>();
+  const sanitized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/);
+
+  for (const token of sanitized) {
+    if (!token || STOP_WORDS.has(token)) {
+      continue;
     }
-  } finally {
-    reader.releaseLock();
+    counts.set(token, (counts.get(token) ?? 0) + 1);
   }
 
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return merged;
+  return counts;
 };
 
-const decompressDeflateRaw = async (data: Uint8Array) => {
-  const DecompressionStreamCtor = (window as typeof window & {
-    DecompressionStream?: new (format: string) => {
-      readable: ReadableStream<Uint8Array>;
-      writable: WritableStream<Uint8Array>;
-    };
-  }).DecompressionStream;
-
-  if (typeof DecompressionStreamCtor !== 'function') {
-    throw new Error('DOCX extraction is not supported in this browser.');
-  }
-
-  const stream = new DecompressionStreamCtor('deflate-raw');
-  const writer = stream.writable.getWriter();
-  await writer.write(data);
-  await writer.close();
-  return collectStreamChunks(stream.readable);
-};
-
-const extractWordDocumentXml = async (buffer: ArrayBuffer) => {
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-
-  const findEndOfCentralDirectory = () => {
-    for (let index = bytes.length - 22; index >= 0; index -= 1) {
-      if (view.getUint32(index, true) === 0x06054b50) {
-        return index;
-      }
-    }
-    throw new Error('Invalid DOCX archive structure.');
-  };
-
-  const eocdOffset = findEndOfCentralDirectory();
-  const centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
-  const totalEntries = view.getUint16(eocdOffset + 10, true);
-
-  let offset = centralDirectoryOffset;
-  let target:
-    | {
-        localHeaderOffset: number;
-        compressedSize: number;
-        compression: number;
-      }
-    | null = null;
-
-  const decoder = new TextDecoder();
-
-  for (let index = 0; index < totalEntries; index += 1) {
-    if (view.getUint32(offset, true) !== 0x02014b50) {
-      throw new Error('Unable to read DOCX directory entries.');
-    }
-
-    const compression = view.getUint16(offset + 10, true);
-    const compressedSize = view.getUint32(offset + 20, true);
-    const fileNameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    const fileNameStart = offset + 46;
-    const fileNameEnd = fileNameStart + fileNameLength;
-    const fileName = decoder.decode(bytes.subarray(fileNameStart, fileNameEnd));
-
-    if (fileName === 'word/document.xml') {
-      target = {
-        localHeaderOffset: view.getUint32(offset + 42, true),
-        compressedSize,
-        compression,
-      };
-      break;
-    }
-
-    offset = fileNameEnd + extraLength + commentLength;
-  }
-
-  if (!target) {
-    throw new Error('Unable to locate DOCX main document.');
-  }
-
-  const { localHeaderOffset, compressedSize, compression } = target;
-
-  if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
-    throw new Error('Invalid DOCX file header.');
-  }
-
-  const nameLength = view.getUint16(localHeaderOffset + 26, true);
-  const extraLength = view.getUint16(localHeaderOffset + 28, true);
-  const dataStart = localHeaderOffset + 30 + nameLength + extraLength;
-  const dataEnd = dataStart + compressedSize;
-  const compressedData = bytes.subarray(dataStart, dataEnd);
-
-  if (compression === 0) {
-    return decoder.decode(compressedData);
-  }
-
-  if (compression !== 8) {
-    throw new Error('Unsupported DOCX compression method.');
-  }
-
-  const decompressed = await decompressDeflateRaw(compressedData);
-  return decoder.decode(decompressed);
-};
-
-const collectParagraphText = (paragraph: Element): string => {
-  const parts: string[] = [];
-
-  const processNode = (node: ChildNode): void => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const value = node.nodeValue ?? '';
-      if (value) {
-        parts.push(value);
-      }
-      return;
-    }
-
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      return;
-    }
-
-    const element = node as Element;
-    if (element.tagName === 'w:tab') {
-      parts.push('\t');
-      return;
-    }
-
-    if (element.tagName === 'w:br') {
-      parts.push('\n');
-      return;
-    }
-
-    if (element.tagName === 'w:t') {
-      parts.push(element.textContent ?? '');
-      return;
-    }
-
-    Array.from(element.childNodes).forEach(processNode);
-  };
-
-  Array.from(paragraph.childNodes).forEach(processNode);
-  return parts.join('').replace(/\n{2,}/g, '\n').trimEnd();
-};
-
-const extractTextFromDocx = async (buffer: ArrayBuffer) => {
-  const xmlContent = await extractWordDocumentXml(buffer);
-  const parser = new DOMParser();
-  const xml = parser.parseFromString(xmlContent, 'application/xml');
-
-  if (xml.getElementsByTagName('parsererror').length > 0) {
-    throw new Error('Unable to parse DOCX contents.');
-  }
-
-  const paragraphs = Array.from(xml.getElementsByTagName('w:p'));
-  const lines = paragraphs
-    .map(collectParagraphText)
-    .filter((line) => line.trim().length > 0);
-
-  return lines.join('\n');
+const getTopKeywords = (value: string, limit: number) => {
+  const counts = keywordFrequencyMap(value);
+  return Array.from(counts.entries())
+    .sort((first, second) => second[1] - first[1])
+    .slice(0, limit)
+    .map(([keyword]) => keyword);
 };
 
 interface AnalyzerFormProps {
@@ -258,6 +359,58 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({
   onReset
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [keywordOnly, setKeywordOnly] = useState(false);
+  const [keywordLimit, setKeywordLimit] = useState(KEYWORD_DEFAULT_COUNT);
+
+  const extractPdf = async (file: File) => {
+    const pdfjsLib = await loadPdfJs();
+    const typedArray = new Uint8Array(await file.arrayBuffer());
+    const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+
+    try {
+      const pageTexts: string[] = [];
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => (typeof item.str === 'string' ? item.str : ''))
+          .filter((segment: string) => segment.trim().length > 0)
+          .join(' ');
+        if (pageText) {
+          pageTexts.push(pageText);
+        }
+      }
+      return pageTexts.join('\n');
+    } finally {
+      if (typeof pdf.cleanup === 'function') {
+        await pdf.cleanup();
+      }
+      if (typeof pdf.destroy === 'function') {
+        await pdf.destroy();
+      }
+    }
+  };
+
+  const extractDocx = async (file: File) => {
+    const mammoth = await loadMammoth();
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return result.value ?? '';
+  };
+
+  const readPlainText = async (file: File, extension: string) => {
+    let rawText = await file.text();
+    if (extension === 'rtf') {
+      rawText = stripRtf(rawText);
+    }
+    return rawText;
+  };
+
+  const resetFileInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -269,44 +422,40 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({
 
     if (!SUPPORTED_EXTENSIONS.has(extension)) {
       window.alert('Unsupported file type. Please upload a TXT, MD, RTF, PDF, or DOCX file.');
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      resetFileInput();
       return;
     }
 
     try {
+      let extracted = '';
+
       if (extension === 'pdf') {
-        const buffer = await file.arrayBuffer();
-        const extracted = extractTextFromPdf(buffer);
-        if (!extracted.trim()) {
-          throw new Error('Unable to extract readable text from the PDF file.');
-        }
-        onResumeChange(sanitizeExtractedText(extracted));
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        return;
+        extracted = await extractPdf(file);
+      } else if (extension === 'docx') {
+        extracted = await extractDocx(file);
+      } else {
+        extracted = await readPlainText(file, extension);
       }
 
-      if (extension === 'docx') {
-        const buffer = await file.arrayBuffer();
-        const extracted = await extractTextFromDocx(buffer);
-        if (!extracted.trim()) {
-          throw new Error('Unable to extract readable text from the DOCX file.');
-        }
-        onResumeChange(sanitizeExtractedText(extracted));
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        return;
+      const cleaned = cleanExtractedText(extracted);
+
+      if (!cleaned) {
+        throw new Error('Unable to extract readable text from the selected file.');
       }
 
-      const text = await file.text();
-      onResumeChange(sanitizeExtractedText(text));
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      if (keywordOnly) {
+        const limit = Number.isFinite(keywordLimit)
+          ? Math.max(1, Math.min(100, keywordLimit))
+          : KEYWORD_DEFAULT_COUNT;
+        const keywords = getTopKeywords(cleaned, limit);
+        if (!keywords.length) {
+          throw new Error('Unable to derive keywords from the uploaded file.');
+        }
+        onResumeChange(keywords.join('\n'));
+      } else {
+        onResumeChange(cleaned);
       }
+      resetFileInput();
     } catch (error) {
       console.error('Failed to process file contents', error);
       window.alert(
@@ -314,17 +463,13 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({
           ? error.message
           : 'Unable to read the selected file. Please try a different document.'
       );
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      resetFileInput();
     }
   };
 
   const handleClear = () => {
     onReset();
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    resetFileInput();
   };
 
   return (
@@ -333,22 +478,51 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({
       className="space-y-8 rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl shadow-slate-950/40"
     >
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold text-slate-50">Candidate Resume</h2>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-dashed border-slate-700 px-3 py-1 text-xs font-medium text-slate-300 hover:border-emerald-400 hover:text-emerald-200">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.md,.rtf,.pdf,.docx"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-            Upload text file
-          </label>
+          <div className="flex flex-col gap-2 text-xs text-slate-300 sm:flex-row sm:items-center sm:gap-4">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-dashed border-slate-700 px-3 py-1 font-medium hover:border-emerald-400 hover:text-emerald-200">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.md,.rtf,.pdf,.docx"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+              Upload file
+            </label>
+            <label className="inline-flex items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={keywordOnly}
+                onChange={(event) => setKeywordOnly(event.target.checked)}
+                className="h-3.5 w-3.5 rounded border border-slate-600 bg-slate-900 text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              />
+              Extract keywords only
+            </label>
+            {keywordOnly && (
+              <label className="inline-flex items-center gap-2 font-medium">
+                <span>Top</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={keywordLimit}
+                  onChange={(event) => {
+                    const parsed = Number.parseInt(event.target.value, 10);
+                    setKeywordLimit(Number.isNaN(parsed) ? KEYWORD_DEFAULT_COUNT : parsed);
+                  }}
+                  className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-xs text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                />
+                <span>keywords</span>
+              </label>
+            )}
+          </div>
         </div>
         <p className="text-xs text-slate-400">
           Paste your resume content or upload a supported file (.txt, .md, .rtf, .pdf, .docx). Rich formats are converted to
-          readable text automatically.
+          clean, readable text automatically. Enable keyword extraction to pull the most frequent terms instead of the full
+          document.
         </p>
         <textarea
           required
