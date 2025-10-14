@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AnalyzerForm from '../components/Form';
 import Loader from '../components/Loader';
 import ResultsCard from '../components/ResultsCard';
+import SkillsRadarMatrix from '../components/SkillsRadarMatrix';
 import type { AnalysisResponse } from '../lib/types';
 
 export default function Home() {
@@ -85,6 +86,13 @@ export default function Home() {
           </div>
 
           {result && <ResultsCard result={result} />}
+
+          {resumeText.trim().length > 0 && jobDescription.trim().length > 0 && (
+            <SkillsRadarMatrix
+              resumeText={resumeText}
+              jobDescriptionText={jobDescription}
+            />
+          )}
         </section>
 
         <footer className="mt-16 text-center text-xs text-slate-500">
