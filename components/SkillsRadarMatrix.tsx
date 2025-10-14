@@ -18,16 +18,7 @@ interface SkillEntry {
   status: 'strong' | 'needs-improvement' | 'weak';
   requiredKeywords: string[];
   candidateKeywords: string[];
-  gap: number;
 }
-
-type MatrixSummary = Record<
-  string,
-  {
-    required: number;
-    candidate: number;
-  }
->;
 
 declare global {
   interface Window {
@@ -349,21 +340,10 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
         candidateScore,
         status: determineStatus(candidateScore),
         requiredKeywords,
-        candidateKeywords,
-        gap: Math.max(0, requiredScore - candidateScore)
+        candidateKeywords
       };
     }).filter((entry) => entry.requiredKeywords.length > 0 || entry.candidateKeywords.length > 0);
   }, [jobDescriptionText, resumeText]);
-
-  const summaryMatrix = useMemo<MatrixSummary>(() => {
-    return analysisEntries.reduce((acc, entry) => {
-      acc[entry.category] = {
-        required: entry.requiredScore,
-        candidate: entry.candidateScore
-      };
-      return acc;
-    }, {} as MatrixSummary);
-  }, [analysisEntries]);
 
   const labels = useMemo(() => analysisEntries.map((entry) => entry.category), [analysisEntries]);
 
@@ -545,11 +525,6 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
     };
   }, []);
 
-  const topGaps = useMemo(() => {
-    const sorted = [...analysisEntries].sort((a, b) => b.gap - a.gap);
-    return sorted.filter((entry) => entry.gap > 0).slice(0, 3);
-  }, [analysisEntries]);
-
   if (!analysisEntries.length) {
     return (
       <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-300">
@@ -626,30 +601,6 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <div>
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Analysis summary
-          </h4>
-          {topGaps.length ? (
-            <p className="mt-2 text-sm text-slate-200">
-              Top {topGaps.length} gap{topGaps.length > 1 ? 's' : ''}: {topGaps.map((entry) => entry.category).join(', ')}
-            </p>
-          ) : (
-            <p className="mt-2 text-sm text-emerald-300">
-              Candidate aligns strongly with the highlighted job requirements.
-            </p>
-          )}
-        </div>
-        <div>
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            JSON matrix
-          </h4>
-          <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-200">
-            {JSON.stringify(summaryMatrix, null, 2)}
-          </pre>
-        </div>
-      </div>
     </section>
   );
 };
