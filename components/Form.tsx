@@ -1,185 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 
 const SUPPORTED_EXTENSIONS = new Set(['txt', 'md', 'rtf', 'pdf', 'docx']);
-
-const STOP_WORDS = new Set([
-  'a',
-  'about',
-  'above',
-  'after',
-  'again',
-  'against',
-  'all',
-  'am',
-  'an',
-  'and',
-  'any',
-  'are',
-  "aren't",
-  'as',
-  'at',
-  'be',
-  'because',
-  'been',
-  'before',
-  'being',
-  'below',
-  'between',
-  'both',
-  'but',
-  'by',
-  "can't",
-  'cannot',
-  'could',
-  "couldn't",
-  'did',
-  "didn't",
-  'do',
-  'does',
-  "doesn't",
-  'doing',
-  "don't",
-  'down',
-  'during',
-  'each',
-  'few',
-  'for',
-  'from',
-  'further',
-  'had',
-  "hadn't",
-  'has',
-  "hasn't",
-  'have',
-  "haven't",
-  'having',
-  'he',
-  "he'd",
-  "he'll",
-  "he's",
-  'her',
-  'here',
-  "here's",
-  'hers',
-  'herself',
-  'him',
-  'himself',
-  'his',
-  'how',
-  "how's",
-  'i',
-  "i'd",
-  "i'll",
-  "i'm",
-  "i've",
-  'if',
-  'in',
-  'into',
-  'is',
-  "isn't",
-  'it',
-  "it's",
-  'its',
-  'itself',
-  "let's",
-  'me',
-  'more',
-  'most',
-  "mustn't",
-  'my',
-  'myself',
-  'no',
-  'nor',
-  'not',
-  'of',
-  'off',
-  'on',
-  'once',
-  'only',
-  'or',
-  'other',
-  'ought',
-  'our',
-  'ours',
-  'ourselves',
-  'out',
-  'over',
-  'own',
-  'same',
-  "shan't",
-  'she',
-  "she'd",
-  "she'll",
-  "she's",
-  'should',
-  "shouldn't",
-  'so',
-  'some',
-  'such',
-  'than',
-  'that',
-  "that's",
-  'the',
-  'their',
-  'theirs',
-  'them',
-  'themselves',
-  'then',
-  'there',
-  "there's",
-  'these',
-  'they',
-  "they'd",
-  "they'll",
-  "they're",
-  "they've",
-  'this',
-  'those',
-  'through',
-  'to',
-  'too',
-  'under',
-  'until',
-  'up',
-  'very',
-  'was',
-  "wasn't",
-  'we',
-  "we'd",
-  "we'll",
-  "we're",
-  "we've",
-  'were',
-  "weren't",
-  'what',
-  "what's",
-  'when',
-  "when's",
-  'where',
-  "where's",
-  'which',
-  'while',
-  'who',
-  "who's",
-  'whom',
-  'why',
-  "why's",
-  'with',
-  "won't",
-  'would',
-  "wouldn't",
-  'you',
-  "you'd",
-  "you'll",
-  "you're",
-  "you've",
-  'your',
-  'yours',
-  'yourself',
-  'yourselves',
-]);
-
-const KEYWORD_DEFAULT_COUNT = 15;
 
 declare global {
   interface Window {
@@ -314,31 +135,6 @@ const cleanExtractedText = (value: string) => {
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 };
 
-const keywordFrequencyMap = (value: string) => {
-  const counts = new Map<string, number>();
-  const sanitized = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/);
-
-  for (const token of sanitized) {
-    if (!token || STOP_WORDS.has(token)) {
-      continue;
-    }
-    counts.set(token, (counts.get(token) ?? 0) + 1);
-  }
-
-  return counts;
-};
-
-const getTopKeywords = (value: string, limit: number) => {
-  const counts = keywordFrequencyMap(value);
-  return Array.from(counts.entries())
-    .sort((first, second) => second[1] - first[1])
-    .slice(0, limit)
-    .map(([keyword]) => keyword);
-};
-
 interface AnalyzerFormProps {
   resumeText: string;
   jobDescription: string;
@@ -359,8 +155,6 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({
   onReset
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [keywordOnly, setKeywordOnly] = useState(false);
-  const [keywordLimit, setKeywordLimit] = useState(KEYWORD_DEFAULT_COUNT);
 
   const extractPdf = async (file: File) => {
     const pdfjsLib = await loadPdfJs();
@@ -443,18 +237,7 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({
         throw new Error('Unable to extract readable text from the selected file.');
       }
 
-      if (keywordOnly) {
-        const limit = Number.isFinite(keywordLimit)
-          ? Math.max(1, Math.min(100, keywordLimit))
-          : KEYWORD_DEFAULT_COUNT;
-        const keywords = getTopKeywords(cleaned, limit);
-        if (!keywords.length) {
-          throw new Error('Unable to derive keywords from the uploaded file.');
-        }
-        onResumeChange(keywords.join('\n'));
-      } else {
-        onResumeChange(cleaned);
-      }
+      onResumeChange(cleaned);
       resetFileInput();
     } catch (error) {
       console.error('Failed to process file contents', error);
@@ -491,38 +274,11 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({
               />
               Upload file
             </label>
-            <label className="inline-flex items-center gap-2 font-medium">
-              <input
-                type="checkbox"
-                checked={keywordOnly}
-                onChange={(event) => setKeywordOnly(event.target.checked)}
-                className="h-3.5 w-3.5 rounded border border-slate-600 bg-slate-900 text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-              />
-              Extract keywords only
-            </label>
-            {keywordOnly && (
-              <label className="inline-flex items-center gap-2 font-medium">
-                <span>Top</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={keywordLimit}
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.target.value, 10);
-                    setKeywordLimit(Number.isNaN(parsed) ? KEYWORD_DEFAULT_COUNT : parsed);
-                  }}
-                  className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-xs text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                />
-                <span>keywords</span>
-              </label>
-            )}
           </div>
         </div>
         <p className="text-xs text-slate-400">
           Paste your resume content or upload a supported file (.txt, .md, .rtf, .pdf, .docx). Rich formats are converted to
-          clean, readable text automatically. Enable keyword extraction to pull the most frequent terms instead of the full
-          document.
+          clean, readable text automatically for quick analysis.
         </p>
         <textarea
           required
