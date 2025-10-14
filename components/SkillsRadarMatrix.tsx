@@ -57,6 +57,14 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<any>(null);
   const requestControllerRef = useRef<AbortController | null>(null);
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<
+    | {
+        resumeText: string;
+        jobDescription: string;
+      }
+    | null
+  >(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -80,20 +88,43 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
   }, []);
 
   useEffect(() => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+      debounceTimeoutRef.current = null;
+    }
+
+    if (requestControllerRef.current) {
+      requestControllerRef.current.abort();
+      requestControllerRef.current = null;
+    }
+
     if (!resumeText.trim() || !jobDescriptionText.trim()) {
       setEntries([]);
       setSummary(undefined);
       setError(null);
       setIsLoading(false);
-      if (requestControllerRef.current) {
-        requestControllerRef.current.abort();
-        requestControllerRef.current = null;
-      }
+      setPendingPayload(null);
       return;
     }
 
-    if (requestControllerRef.current) {
-      requestControllerRef.current.abort();
+    debounceTimeoutRef.current = setTimeout(() => {
+      setPendingPayload({
+        resumeText,
+        jobDescription: jobDescriptionText
+      });
+    }, 600);
+
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+    };
+  }, [jobDescriptionText, resumeText]);
+
+  useEffect(() => {
+    if (!pendingPayload) {
+      return;
     }
 
     const controller = new AbortController();
@@ -111,7 +142,7 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ resumeText, jobDescription: jobDescriptionText }),
+          body: JSON.stringify(pendingPayload),
           signal: controller.signal
         });
 
@@ -147,6 +178,9 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
           return;
         }
         setIsLoading(false);
+        if (requestControllerRef.current === controller) {
+          requestControllerRef.current = null;
+        }
       }
     };
 
@@ -155,8 +189,11 @@ const SkillsRadarMatrix: React.FC<SkillsRadarMatrixProps> = ({ resumeText, jobDe
     return () => {
       isActive = false;
       controller.abort();
+      if (requestControllerRef.current === controller) {
+        requestControllerRef.current = null;
+      }
     };
-  }, [jobDescriptionText, resumeText]);
+  }, [pendingPayload]);
 
   const decoratedEntries = useMemo(
     () =>
