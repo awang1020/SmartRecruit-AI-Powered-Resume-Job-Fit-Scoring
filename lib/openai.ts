@@ -29,8 +29,8 @@ export async function getChatCompletion(messages: AzureOpenAIChatMessage[]): Pro
     },
     body: JSON.stringify({
       messages,
-      temperature: 0.2,
-      max_tokens: 600,
+      temperature: 1,
+      max_completion_tokens: 1000,
       n: 1
     })
   });
